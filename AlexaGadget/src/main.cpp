@@ -19,14 +19,14 @@
 #include "alexaGadgetSpeechDataSpeechmarksDirective.pb.h"
 #include "alexaDiscoveryDiscoverResponseEventPayload.pb.h"
 
-const char *AmazonId = "yAmazonIDz";
-const char *AlexaGadgetSecret = "yAlexaƒKƒWƒFƒbƒg‚ÌƒV[ƒNƒŒƒbƒgz";
-const char *EndpointId = "yƒKƒWƒFƒbƒg‚Ì¯•Êqz";
-const char *FriendlyName ="y»•iIDz";
-const char *DeviceToken = "yƒfƒoƒCƒXƒg[ƒNƒ“z";
-const char *FirmwareVersion = "yƒtƒ@[ƒ€ƒEƒFƒAƒo[ƒWƒ‡ƒ“z";
-const char *ModelName = "yƒ‚ƒfƒ‹–¼z";
-const char *RadioAddress = "yESP32‚ÌBLE‚ÌMacAddressz";
+const char *AmazonId = "ã€AmazonIDã€‘";
+const char *AlexaGadgetSecret = "ã€Alexaã‚¬ã‚¸ã‚§ãƒƒãƒˆã®ã‚·ãƒ¼ã‚¯ãƒ¬ãƒƒãƒˆã€‘";
+const char *EndpointId = "ã€ã‚¬ã‚¸ã‚§ãƒƒãƒˆã®è­˜åˆ¥å­ã€‘";
+const char *FriendlyName ="ã€è£½å“IDã€‘";
+const char *DeviceToken = "ã€ãƒ‡ãƒã‚¤ã‚¹ãƒˆãƒ¼ã‚¯ãƒ³ã€‘";
+const char *FirmwareVersion = "ã€ãƒ•ã‚¡ãƒ¼ãƒ ã‚¦ã‚§ã‚¢ãƒãƒ¼ã‚¸ãƒ§ãƒ³ã€‘";
+const char *ModelName = "ã€ãƒ¢ãƒ‡ãƒ«åã€‘";
+const char *RadioAddress = "ã€ESP32ã®BLEã®MacAddressã€‘";
 
 #define UUID_SERVICE BLEUUID((uint16_t)0xFE03)
 #define UUID_WRITE "F04EB177-3005-43A7-AC61-A390DDF83076"
@@ -116,7 +116,7 @@ long sendPacket(stream_id_t stream_id, const uint8_t *p_buffer, uint16_t buffer_
       uint16_t packet_len = sizeof(value_read);
       result_len = createPacket(stream_id, g_trxn_id, seq, p_buffer, buffer_len, value_read, &packet_len);
       if( result_len < 0 ){
-          printf("Error result_len=%ld\n", result_len);
+          Serial.printf("Error result_len=%ld\n", result_len);
           return result_len;
       }
       pCharacteristic_notify->setValue(value_read, packet_len);
@@ -139,14 +139,17 @@ class MyCharacteristicCallbacks : public BLECharacteristicCallbacks{
     long result;
 
     result = appendPacket(value, len);
+    if( result < 0 ){
+      resetPacket();
+      return;
+    }
     if( result != 0 )
       return;
-    resetPacket();
 
     debug_dump(gp_receive_buffer, g_receive_total_len);
     Serial.printf("ack=%d\n", g_ack_bit);
 
-    if( (value[0] & 0xf0) == 0x00 ){
+    if( ((value[0] >> 4) & 0x0f) == CONTROL_STREAM ){
       memmove(&controlEnvelope, &controlEnvelope_zero, sizeof(ControlEnvelope));
       pb_istream_t stream = pb_istream_from_buffer(gp_receive_buffer, g_receive_total_len);
       status = pb_decode(&stream, ControlEnvelope_fields, &controlEnvelope);
@@ -185,8 +188,7 @@ class MyCharacteristicCallbacks : public BLECharacteristicCallbacks{
       }else{
         Serial.print("Not Supported");
       }
-
-    }else if( (value[0] & 0xf0) == 0x60){
+    }else if( ((value[0] >> 4) & 0x0f) == ALEXA_STREAM){
       Serial.println("Alexa stream");
 
       directive_DirectiveParserProto directive_envelope = directive_DirectiveParserProto_init_default;
@@ -263,6 +265,8 @@ class MyCharacteristicCallbacks : public BLECharacteristicCallbacks{
         Serial.print("Not Supported");
       }
     }
+
+    resetPacket();
   }
   void onStatus(BLECharacteristic* pCharacteristic, Status s, uint32_t code){
     Serial.println("onStatus");
