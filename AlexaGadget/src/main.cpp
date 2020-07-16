@@ -16,7 +16,6 @@
 #include "alexaDiscoveryDiscoverDirective.pb.h"
 #include "notificationsSetIndicatorDirective.pb.h"
 #include "alexaGadgetStateListenerStateUpdateDirective.pb.h"
-#include "alexaGadgetSpeechDataSpeechmarksDirective.pb.h"
 #include "alexaDiscoveryDiscoverResponseEventPayload.pb.h"
 
 const char *AmazonId = "【AmazonID】";
@@ -28,12 +27,12 @@ const char *FirmwareVersion = "【ファームウェアバージョン】";
 const char *ModelName = "【モデル名】";
 const char *RadioAddress = "【ESP32のBLEのMacAddress】";
 
+#define SAMPLE_MAX_TRANSACTION_SIZE (512U)
+#define SAMPLE_NEGOTIATED_MTU       (23U)
+
 #define UUID_SERVICE BLEUUID((uint16_t)0xFE03)
 #define UUID_WRITE "F04EB177-3005-43A7-AC61-A390DDF83076"
 #define UUID_NOTIFY "2BEEA05B-1879-4BB4-8A2F-72641F82420B"
-
-#define SAMPLE_MAX_TRANSACTION_SIZE (512U)
-#define SAMPLE_NEGOTIATED_MTU       (23U)
 
 void resetPacket(void);
 long appendPacket(const uint8_t *p_buffer, uint16_t buffer_len);
