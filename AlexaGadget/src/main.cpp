@@ -319,7 +319,6 @@ void taskServer(void*) {
   strServiceData += (char)0x00;
   strServiceData += (char)0x00;
   strServiceData += (char)0x00;
-  strServiceData += (char)0x00;
   advertisementData.addData(strServiceData);
   pAdvertising->setAdvertisementData(advertisementData);
   pAdvertising->start();
