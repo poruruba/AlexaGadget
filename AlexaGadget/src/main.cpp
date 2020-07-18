@@ -2,11 +2,11 @@
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
-#include "BLE2902.h"
+#include <BLE2902.h>
 
-#include "pb.h"
-#include "pb_decode.h"
-#include "pb_encode.h"
+#include <pb.h>
+#include <pb_decode.h>
+#include <pb_encode.h>
 
 #include "common.h"
 #include "accessories.pb.h"
@@ -30,10 +30,14 @@ const char *RadioAddress = "【ESP32のBLEのMacAddress】";
 #define SAMPLE_MAX_TRANSACTION_SIZE (512U)
 #define SAMPLE_NEGOTIATED_MTU       (23U)
 
-#define UUID_SERVICE BLEUUID((uint16_t)0xFE03)
+#define UUID_SERVICE_SHORT  0xFE03
+#define BT_VENDOR_ID        0x0171
+
+#define UUID_SERVICE BLEUUID((uint16_t)UUID_SERVICE_SHORT)
 #define UUID_WRITE "F04EB177-3005-43A7-AC61-A390DDF83076"
 #define UUID_NOTIFY "2BEEA05B-1879-4BB4-8A2F-72641F82420B"
 
+long sendPacket(stream_id_t stream_id, const uint8_t *p_buffer, uint16_t buffer_len);
 void resetPacket(void);
 long appendPacket(const uint8_t *p_buffer, uint16_t buffer_len);
 long createPacket(stream_id_t stream_id, uint8_t trxn_id, uint8_t seq_no, const uint8_t *p_payload, uint16_t payload_len, uint8_t *p_buffer, uint16_t *p_buffer_len);
@@ -105,29 +109,6 @@ class MyDescriptorCallback : public BLEDescriptorCallbacks{
   }
 };
 
-long sendPacket(stream_id_t stream_id, const uint8_t *p_buffer, uint16_t buffer_len){
-  uint8_t seq = 0;
-  long result_len;
-
-  Serial.println("sendPacket");
-  debug_dump(p_buffer, buffer_len);
-  do{
-      uint16_t packet_len = sizeof(value_read);
-      result_len = createPacket(stream_id, g_trxn_id, seq, p_buffer, buffer_len, value_read, &packet_len);
-      if( result_len < 0 ){
-          Serial.printf("Error result_len=%ld\n", result_len);
-          return result_len;
-      }
-      pCharacteristic_notify->setValue(value_read, packet_len);
-      pCharacteristic_notify->notify();
-
-      seq++;
-  }while(result_len > 0);
-
-  Serial.println("Notify End");
-  return 0;
-}
-
 class MyCharacteristicCallbacks : public BLECharacteristicCallbacks{
   void onWrite(BLECharacteristic* pCharacteristic){
     Serial.println("onWrite");
@@ -141,17 +122,17 @@ class MyCharacteristicCallbacks : public BLECharacteristicCallbacks{
     if( result < 0 ){
       resetPacket();
       return;
-    }
-    if( result != 0 )
+    }else if( result > 0 ){
       return;
+}
 
     debug_dump(gp_receive_buffer, g_receive_total_len);
     Serial.printf("ack=%d\n", g_ack_bit);
 
     if( ((value[0] >> 4) & 0x0f) == CONTROL_STREAM ){
       memmove(&controlEnvelope, &controlEnvelope_zero, sizeof(ControlEnvelope));
-      pb_istream_t stream = pb_istream_from_buffer(gp_receive_buffer, g_receive_total_len);
-      status = pb_decode(&stream, ControlEnvelope_fields, &controlEnvelope);
+      pb_istream_t istream = pb_istream_from_buffer(gp_receive_buffer, g_receive_total_len);
+      status = pb_decode(&istream, ControlEnvelope_fields, &controlEnvelope);
       if( !status ) {
         Serial.println("pb_decode Error");
         return;
@@ -161,38 +142,36 @@ class MyCharacteristicCallbacks : public BLECharacteristicCallbacks{
       if( controlEnvelope.command == Command_GET_DEVICE_INFORMATION ){
         Serial.println("Command_GET_DEVICE_INFORMATION");
 
-        pb_ostream_t stream2 = pb_ostream_from_buffer(gp_send_buffer, sizeof(gp_send_buffer));
-        status = pb_encode(&stream2, ControlEnvelope_fields, &get_device_info_controlEnvelope);
+        pb_ostream_t ostream = pb_ostream_from_buffer(gp_send_buffer, sizeof(gp_send_buffer));
+        status = pb_encode(&ostream, ControlEnvelope_fields, &get_device_info_controlEnvelope);
         if (!status) {
           Serial.println("pb_encode Error");
           return;
         }
-        debug_dump(gp_send_buffer, stream2.bytes_written);
-        Serial.printf("written=%d\n", stream2.bytes_written);
+        Serial.printf("bytes_written=%d\n", ostream.bytes_written);
 
-        sendPacket(CONTROL_STREAM, gp_send_buffer, stream2.bytes_written);
+        sendPacket(CONTROL_STREAM, gp_send_buffer, ostream.bytes_written);
       }else if( controlEnvelope.command == Command_GET_DEVICE_FEATURES ){
         Serial.println("Command_GET_DEVICE_FEATURES");
 
-        pb_ostream_t stream2 = pb_ostream_from_buffer(gp_send_buffer, sizeof(gp_send_buffer));
-        status = pb_encode(&stream2, ControlEnvelope_fields, &get_device_features_controlEnvelope);
+        pb_ostream_t ostream = pb_ostream_from_buffer(gp_send_buffer, sizeof(gp_send_buffer));
+        status = pb_encode(&ostream, ControlEnvelope_fields, &get_device_features_controlEnvelope);
         if( !status ){
           Serial.println("pb_encode Error");
           return;
         }
-        debug_dump(gp_send_buffer, stream2.bytes_written);
-        Serial.printf("written=%d\n", stream2.bytes_written);
+        Serial.printf("bytes_written=%d\n", ostream.bytes_written);
 
-        sendPacket(CONTROL_STREAM, gp_send_buffer, stream2.bytes_written);
+        sendPacket(CONTROL_STREAM, gp_send_buffer, ostream.bytes_written);
       }else{
-        Serial.print("Not Supported");
+        Serial.println("Not Supported");
       }
     }else if( ((value[0] >> 4) & 0x0f) == ALEXA_STREAM){
       Serial.println("Alexa stream");
 
       directive_DirectiveParserProto directive_envelope = directive_DirectiveParserProto_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(gp_receive_buffer, g_receive_total_len);
-      status = pb_decode(&stream, directive_DirectiveParserProto_fields, &directive_envelope);
+      pb_istream_t istream = pb_istream_from_buffer(gp_receive_buffer, g_receive_total_len);
+      status = pb_decode(&istream, directive_DirectiveParserProto_fields, &directive_envelope);
       if( !status ){
         Serial.println("pb_decode Error");
         return;
@@ -200,9 +179,9 @@ class MyCharacteristicCallbacks : public BLECharacteristicCallbacks{
       Serial.printf("name = %s, namespace=%s\n", directive_envelope.directive.header.name, directive_envelope.directive.header.namespacc);
 
       if (0 == strcmp(directive_envelope.directive.header.name, "SetIndicator") && (0 == strcmp(directive_envelope.directive.header.namespacc, "Notifications"))) {
-        pb_istream_t stream_notification = pb_istream_from_buffer(gp_receive_buffer, g_receive_total_len);
+        pb_istream_t istream_notification = pb_istream_from_buffer(gp_receive_buffer, g_receive_total_len);
         notifications_SetIndicatorDirectiveProto notifications_envelope = notifications_SetIndicatorDirectiveProto_init_default;
-        status = pb_decode(&stream_notification, notifications_SetIndicatorDirectiveProto_fields, &notifications_envelope);
+        status = pb_decode(&istream_notification, notifications_SetIndicatorDirectiveProto_fields, &notifications_envelope);
         if( !status ){
           Serial.println("pb_decode Error");
           return;
@@ -215,9 +194,9 @@ class MyCharacteristicCallbacks : public BLECharacteristicCallbacks{
           notifications_envelope.directive.payload.asset.url);
 
       } else if (0 == strcmp(directive_envelope.directive.header.name, "Discover") && (0 == strcmp(directive_envelope.directive.header.namespacc, "Alexa.Discovery"))) {
-        pb_istream_t stream5 = pb_istream_from_buffer(gp_receive_buffer, g_receive_total_len);
+        pb_istream_t istream_discovery = pb_istream_from_buffer(gp_receive_buffer, g_receive_total_len);
         alexaDiscovery_DiscoverDirectiveProto discovery_envelope = alexaDiscovery_DiscoverDirectiveProto_init_default;
-        status = pb_decode(&stream5, alexaDiscovery_DiscoverDirectiveProto_fields, &discovery_envelope);
+        status = pb_decode(&istream_discovery, alexaDiscovery_DiscoverDirectiveProto_fields, &discovery_envelope);
         if( !status ){
           Serial.println("pb_decode Error");
           return;
@@ -225,21 +204,20 @@ class MyCharacteristicCallbacks : public BLECharacteristicCallbacks{
         Serial.printf("scope type: %s\n", discovery_envelope.directive.payload.scope.type);
         Serial.printf("scope token: %s\n", discovery_envelope.directive.payload.scope.token);
 
-        pb_ostream_t stream2 = pb_ostream_from_buffer(gp_send_buffer, sizeof(gp_send_buffer));
-        status = pb_encode(&stream2, alexaDiscovery_DiscoverResponseEventProto_fields, &discover_response_envelope);
+        pb_ostream_t ostream = pb_ostream_from_buffer(gp_send_buffer, sizeof(gp_send_buffer));
+        status = pb_encode(&ostream, alexaDiscovery_DiscoverResponseEventProto_fields, &discover_response_envelope);
         if (!status){
           Serial.println("pb_encode Error");
           return;
         }
+        Serial.printf("bytes_written=%d\n", ostream.bytes_written);
 
-        Serial.printf("written=%d\n", stream2.bytes_written);
-
-        sendPacket(ALEXA_STREAM, gp_send_buffer, stream2.bytes_written);
+        sendPacket(ALEXA_STREAM, gp_send_buffer, ostream.bytes_written);
       }else
       if (0 == strcmp(directive_envelope.directive.header.name, "StateUpdate") && (0 == strcmp(directive_envelope.directive.header.namespacc, "Alexa.Gadget.StateListener"))){
-        pb_istream_t stream = pb_istream_from_buffer(gp_receive_buffer, g_receive_total_len);
+        pb_istream_t istream_statusupdate = pb_istream_from_buffer(gp_receive_buffer, g_receive_total_len);
         alexaGadgetStateListener_StateUpdateDirectiveProto statusupdate_envelope = alexaGadgetStateListener_StateUpdateDirectiveProto_init_default;
-        status = pb_decode(&stream, alexaGadgetStateListener_StateUpdateDirectiveProto_fields, &statusupdate_envelope);
+        status = pb_decode(&istream_statusupdate, alexaGadgetStateListener_StateUpdateDirectiveProto_fields, &statusupdate_envelope);
         if( !status ){
           Serial.println("pb_decode Error");
           return;
@@ -261,12 +239,13 @@ class MyCharacteristicCallbacks : public BLECharacteristicCallbacks{
       if (0 == strcmp(directive_envelope.directive.header.name, "ClearIndicator") && (0 == strcmp(directive_envelope.directive.header.namespacc, "Notifications"))){
         // Do nothing
       }else{
-        Serial.print("Not Supported");
+        Serial.println("Not Supported");
       }
     }
 
     resetPacket();
   }
+
   void onStatus(BLECharacteristic* pCharacteristic, Status s, uint32_t code){
     Serial.println("onStatus");
   }
@@ -316,12 +295,12 @@ void taskServer(void*) {
   BLEAdvertisementData advertisementData = BLEAdvertisementData();
   advertisementData.setFlags(0x06);
   std::string strServiceData = "";
-  strServiceData += (char)0x17;
+  strServiceData += (char)23;
   strServiceData += (char)0x16;
-  strServiceData += (char)0x03;
-  strServiceData += (char)0xfe;
-  strServiceData += (char)0x71;
-  strServiceData += (char)0x01;
+  strServiceData += (char)(UUID_SERVICE_SHORT&0xff);
+  strServiceData += (char)((UUID_SERVICE_SHORT>>8)&0xff);
+  strServiceData += (char)(BT_VENDOR_ID&0xff);
+  strServiceData += (char)((BT_VENDOR_ID>>8)&0xff);
   strServiceData += (char)0x00;
   strServiceData += (char)0xff;
   strServiceData += (char)0x00;
@@ -355,7 +334,7 @@ void setup() {
   pinMode(GPIO_NUM_10, OUTPUT);
   digitalWrite(GPIO_NUM_10, HIGH);
 
-  xTaskCreate(taskServer, "server", 80000, NULL, 5, NULL);
+  xTaskCreate(taskServer, "server", 40000, NULL, 5, NULL);
 }
 
 void loop() {
@@ -366,6 +345,29 @@ void loop() {
 static stream_id_t g_stream_id;
 static uint16_t g_buffer_offset = 0;
 static uint8_t g_seq_no;
+
+long sendPacket(stream_id_t stream_id, const uint8_t *p_buffer, uint16_t buffer_len){
+  uint8_t seq = 0;
+  long result_len;
+
+  Serial.println("sendPacket");
+  debug_dump(p_buffer, buffer_len);
+  do{
+      uint16_t packet_len = sizeof(value_read);
+      result_len = createPacket(stream_id, g_trxn_id, seq, p_buffer, buffer_len, value_read, &packet_len);
+      if( result_len < 0 ){
+          Serial.printf("Error result_len=%ld\n", result_len);
+          return result_len;
+      }
+      pCharacteristic_notify->setValue(value_read, packet_len);
+      pCharacteristic_notify->notify();
+
+      seq++;
+  }while(result_len > 0);
+
+  Serial.println("Notify End");
+  return 0;
+}
 
 void resetPacket(void){
     g_buffer_offset = 0;
@@ -379,6 +381,10 @@ long appendPacket(const uint8_t *p_buffer, uint16_t buffer_len){
         g_trxn_id = p_buffer[0] & 0x0f;
         g_seq_no = (p_buffer[1] >> 4) & 0x0f;
         g_ack_bit = (p_buffer[1] & 0x02) != 0x00;
+        if( p_buffer[1] & 0x01 ){
+            Serial.println("EXT Not supported");
+            return -1;
+        }
         g_receive_total_len = (p_buffer[3] << 8) | p_buffer[4];
         if( g_receive_total_len > SAMPLE_MAX_TRANSACTION_SIZE)
             return -2;
@@ -394,6 +400,10 @@ long appendPacket(const uint8_t *p_buffer, uint16_t buffer_len){
             return -5;
         g_seq_no = (p_buffer[1] >> 4) & 0x0f;
         g_ack_bit = (p_buffer[1] & 0x02) != 0x00;
+        if( p_buffer[1] & 0x01 ){
+            Serial.println("EXT Not supported");
+            return -1;
+        }
         uint16_t unit = p_buffer[2];
         if( g_buffer_offset + unit > g_receive_total_len)
             return -6;
