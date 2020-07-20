@@ -1,0 +1,35 @@
+{
+  "name": "lambda_lab",
+  "version": "0.0.1",
+  "private": true,
+  "description": "New Swagger API Project",
+  "keywords": [],
+  "author": "",
+  "license": "",
+  "main": "app.js",
+  "dependencies": {
+    "ask-sdk": "^2.8.0",
+    "ask-sdk-core": "^2.8.0",
+    "ask-sdk-model": "^1.28.0",
+    "aws-sdk": "^2.714.2",
+    "cors": "^2.8.5",
+    "dotenv": "^6.2.0",
+    "express": "^4.12.3",
+    "express-session": "^1.15.6",
+    "jwt-decode": "^2.2.0",
+    "morgan": "^1.9.1",
+    "node-fetch": "^2.6.0",
+    "swagger-express-mw": "^0.1.0",
+    "yaml": "^1.10.0"
+  },
+  "devDependencies": {
+    "should": "^7.1.0",
+    "supertest": "^1.0.0"
+  },
+  "scripts": {
+    "start": "node app.js",
+    "automount": "node automount.js mount",
+    "autoclean": "node automount.js clean",
+    "test": "swagger project test"
+  }
+}
