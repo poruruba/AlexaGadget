@@ -52,7 +52,20 @@ app.intent('Thanks', async (handlerInput) =>{
 });
 
 app.customReceived(async (handlerInput) =>{
-    console.log(handlerInput.requestEnvelope.request.events[0].payload);
+    if( handlerInput.requestEnvelope.request.token != custom_event_token ){
+        console.log('token mismatch');
+        return;
+    }
+
+    var endpointId = app.getAttributes(handlerInput).endpointId;
+    for( var i = 0 ; i < handlerInput.requestEnvelope.request.events.length ; i++ ){
+        if( endpointId != handlerInput.requestEnvelope.request.events[i].endpoint.endpointId ){
+            console.log('endpointId mismatch');
+            continue;
+        }
+        console.log('namespace=' + handlerInput.requestEnvelope.request.events[i].header.namespace + ' name=' + handlerInput.requestEnvelope.request.events[i].header.name);
+        console.log(handlerInput.requestEnvelope.request.events[i].payload);
+    }
 
     var builder = handlerInput.responseBuilder;
     builder.speak('ボタンが押されました');
