@@ -93,6 +93,11 @@ class MyCallbacks : public BLEServerCallbacks {
 class MyDescriptorCallback : public BLEDescriptorCallbacks{
   void onWrite(BLEDescriptor* pDescriptor){
     Serial.println("onWrite(Descriptor)");
+
+    BLE2902* desc = (BLE2902*)pCharacteristic_notify->getDescriptorByUUID(BLEUUID((uint16_t)0x2902));
+    if( !desc->getNotifications() )
+      return;
+
     uint8_t protocol_version_packet[PROTOCOL_VERSION_PACKET_SIZE] = {
         (PROTOCOL_IDENTIFIER >> 8) & 0xff,
         (PROTOCOL_IDENTIFIER >> 0U) & 0xff,
@@ -125,6 +130,7 @@ class MyCharacteristicCallbacks : public BLECharacteristicCallbacks{
     }else if( result > 0 ){
       return;
 }
+    resetPacket();
 
     debug_dump(gp_receive_buffer, g_receive_total_len);
     Serial.printf("ack=%d\n", g_ack_bit);
@@ -242,8 +248,6 @@ class MyCharacteristicCallbacks : public BLECharacteristicCallbacks{
         Serial.println("Not Supported");
       }
     }
-
-    resetPacket();
   }
 
   void onStatus(BLECharacteristic* pCharacteristic, Status s, uint32_t code){
@@ -345,6 +349,55 @@ static stream_id_t g_stream_id;
 static uint16_t g_buffer_offset = 0;
 static uint8_t g_seq_no;
 
+void resetPacket(void){
+    g_buffer_offset = 0;
+}
+
+long appendPacket(const uint8_t *p_buffer, uint16_t buffer_len){
+    if( g_buffer_offset == 0){
+        if( buffer_len < 5)
+            return -1;
+        g_stream_id = (stream_id_t)((p_buffer[0] >> 4) & 0x0f);
+        g_trxn_id = p_buffer[0] & 0x0f;
+        g_seq_no = (p_buffer[1] >> 4) & 0x0f;
+        g_ack_bit = (p_buffer[1] & 0x02) != 0x00;
+        if( p_buffer[1] & 0x01 ){
+            Serial.println("EXT Not supported");
+            return -2;
+        }
+        g_receive_total_len = (p_buffer[3] << 8) | p_buffer[4];
+        if( g_receive_total_len > SAMPLE_MAX_TRANSACTION_SIZE)
+            return -3;
+        uint16_t unit = p_buffer[5];
+        if( (6 + unit) < buffer_len )
+            return -4;
+        memmove(&gp_receive_buffer[g_buffer_offset], &p_buffer[6], unit);
+        g_buffer_offset += unit;
+    }else{
+        if( buffer_len < 3)
+            return -5;
+        if( p_buffer[0] != ((g_stream_id << 4) | g_trxn_id) )
+            return -6;
+        g_seq_no = (p_buffer[1] >> 4) & 0x0f;
+        g_ack_bit = (p_buffer[1] & 0x02) != 0x00;
+        if( p_buffer[1] & 0x01 ){
+            Serial.println("EXT Not supported");
+            return -7;
+        }
+        uint16_t unit = p_buffer[2];
+        if( unit == 0 )
+          return -8;
+        if( g_buffer_offset + unit > g_receive_total_len)
+            return -9;
+        if( (4 + unit) < buffer_len )
+            return -10;
+        memmove(&gp_receive_buffer[g_buffer_offset], &p_buffer[3], unit);
+        g_buffer_offset += unit;
+    }
+
+    return g_receive_total_len - g_buffer_offset;
+}
+
 long sendPacket(stream_id_t stream_id, const uint8_t *p_buffer, uint16_t buffer_len){
   uint8_t seq = 0;
   long result_len;
@@ -366,53 +419,6 @@ long sendPacket(stream_id_t stream_id, const uint8_t *p_buffer, uint16_t buffer_
 
   Serial.println("Notify End");
   return 0;
-}
-
-void resetPacket(void){
-    g_buffer_offset = 0;
-}
-
-long appendPacket(const uint8_t *p_buffer, uint16_t buffer_len){
-    if( g_buffer_offset == 0){
-        if( buffer_len < 5)
-            return -1;
-        g_stream_id = (stream_id_t)((p_buffer[0] >> 4) & 0x0f);
-        g_trxn_id = p_buffer[0] & 0x0f;
-        g_seq_no = (p_buffer[1] >> 4) & 0x0f;
-        g_ack_bit = (p_buffer[1] & 0x02) != 0x00;
-        if( p_buffer[1] & 0x01 ){
-            Serial.println("EXT Not supported");
-            return -1;
-        }
-        g_receive_total_len = (p_buffer[3] << 8) | p_buffer[4];
-        if( g_receive_total_len > SAMPLE_MAX_TRANSACTION_SIZE)
-            return -2;
-        uint16_t unit = p_buffer[5];
-        if( (6 + unit) < buffer_len )
-            return -3;
-        memmove(&gp_receive_buffer[g_buffer_offset], &p_buffer[6], unit);
-        g_buffer_offset += unit;
-    }else{
-        if( buffer_len < 3)
-            return -4;
-        if( p_buffer[0] != ((g_stream_id << 4) | g_trxn_id) )
-            return -5;
-        g_seq_no = (p_buffer[1] >> 4) & 0x0f;
-        g_ack_bit = (p_buffer[1] & 0x02) != 0x00;
-        if( p_buffer[1] & 0x01 ){
-            Serial.println("EXT Not supported");
-            return -1;
-        }
-        uint16_t unit = p_buffer[2];
-        if( g_buffer_offset + unit > g_receive_total_len)
-            return -6;
-        if( (4 + unit) < buffer_len )
-            return -7;
-        memmove(&gp_receive_buffer[g_buffer_offset], &p_buffer[3], unit);
-        g_buffer_offset += unit;
-    }
-
-    return g_receive_total_len - g_buffer_offset;
 }
 
 long createPacket(stream_id_t stream_id, uint8_t trxn_id, uint8_t seq_no, const uint8_t *p_payload, uint16_t payload_len, uint8_t *p_buffer, uint16_t *p_buffer_len){
