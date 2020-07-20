@@ -180,7 +180,7 @@ const ErrorHandler = {
     handle(handlerInput, error) {
         console.log(`Error handled: ${error.message}`);
         console.log(handlerInput);
-        console.log(`type: ${handlerInput.requestEnvelope.request.type}, name: ${handlerInput.requestEnvelope.request.intent.name}`);
+        console.log(`type: ${handlerInput.requestEnvelope.request.type}`);
         return handlerInput.responseBuilder
             .speak('よく聞き取れませんでした。')
             .reprompt('もう一度お願いします。')
